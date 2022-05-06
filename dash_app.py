@@ -141,6 +141,9 @@ def create_dash_app(flask_app):
             df_fastest_lap_relevant_data[column] = df_fastest_lap_relevant_data[column].astype(str).map(lambda x: x[3:-3])
         df_fastest_lap_relevant_data = df_fastest_lap_relevant_data[["P", "DRIVER_NAME", "S1", "S2", "S3", "LAP_TIME", "GAP"]]
 
+        position_fastest_lap = df_fastest_lap_relevant_data[["DRIVER_NAME", "P"]]
+        position_fastest_lap.columns = ["DRIVER_NAME", "P_fastest"]
+
         # ideal lap calculation
         df_ideal_lap_per_driver = df.groupby(["NUMBER", "DRIVER_NAME"]).agg(
             {"S1": "min", "S2": "min", "S3": "min"}).reset_index()
@@ -168,21 +171,92 @@ def create_dash_app(flask_app):
         df_ideal_lap_per_driver = df_ideal_lap_per_driver[["P", "DRIVER_NAME", "S1", "S2", "S3", "IDEAL_LAP", "GAP", "IDEAL_VS_FASTEST"]]
 
 
-        return dbc.Row(
-            [dbc.Col(
-                [html.H5("Fastest Lap", style={"textAlign": "center"}), dash_table.DataTable(
-                    data=df_fastest_lap_relevant_data.to_dict('records'),
-                    columns=[{'name': i, 'id': i} for i in df_fastest_lap_relevant_data.columns],
-                    page_size=20)],
-                width=6),
+        # position change: all improve from fastest to ideal
+        position_ideal_lap = df_ideal_lap_per_driver[["DRIVER_NAME", "P"]]
+        position_ideal_lap.columns = ["DRIVER_NAME", "P_ideal"]
+        position_fastest_vs_ideal = pd.merge(position_fastest_lap, position_ideal_lap, how="inner", on="DRIVER_NAME")
 
-                dbc.Col(
-                    [html.H5("Ideal Lap", style={"textAlign": "center"}), dash_table.DataTable(
-                        data=df_ideal_lap_per_driver.to_dict('records'),
-                        columns=[{'name': i, 'id': i} for i in df_ideal_lap_per_driver.columns],
-                        page_size=20)],
-                    width=6)
+        # position change: only you improve from fastest to ideal
+        ideal_position = {}
+        for index, row in df_ideal_lap_per_driver.iterrows():
+            df_base = df_fastest_lap_relevant_data.copy()
+            ideal_driver_time = row["IDEAL_LAP"]
+            driver = row["DRIVER_NAME"]
+
+            df_base.loc[df_base.DRIVER_NAME == driver, "LAP_TIME"] = ideal_driver_time
+
+            df_base = df_base.sort_values(by="LAP_TIME", ascending=True)
+            df_base["P"] = [i for i in range(1, len(df_base) + 1)]
+            ideal_position[driver] = df_base.loc[df_base.DRIVER_NAME == driver, "P"].values[0]
+
+        position_fastest_vs_ideal["your_ideal_position"] = position_fastest_vs_ideal.DRIVER_NAME.map(ideal_position)
+
+        return html.Div([dbc.Row(
+                                [dbc.Col(
+                                    [html.H5("Fastest Lap", style={"textAlign": "center"}), dash_table.DataTable(
+                                        data=df_fastest_lap_relevant_data.to_dict('records'),
+                                        columns=[{'name': i, 'id': i} for i in df_fastest_lap_relevant_data.columns],
+                                        page_size=20)],
+                                    width=6),
+
+                                    dbc.Col(
+                                        [html.H5("Ideal Lap", style={"textAlign": "center"}), dash_table.DataTable(
+                                            data=df_ideal_lap_per_driver.to_dict('records'),
+                                            columns=[{'name': i, 'id': i} for i in df_ideal_lap_per_driver.columns],
+                                            page_size=20)],
+                                        width=6)
+                                ]),
+            dbc.Row([
+                dbc.Col([dcc.Graph(id='fastest-vs-ideal-all',
+                                   figure={'data': [go.Scatter(
+                                                      x=position_fastest_vs_ideal["P_fastest"],
+                                                      y=position_fastest_vs_ideal["P_ideal"],
+                                                      mode="markers",
+                                                      text=position_fastest_vs_ideal["DRIVER_NAME"],
+                                                      texttemplate="%{text}",
+                                                      textfont={"size": 15},
+                                                      #colorscale='Aggrnyl',
+                                                      #hoverongaps=False
+                                   ), go.Scatter(
+                                                      x=position_fastest_vs_ideal["P_fastest"],
+                                                      y=position_fastest_vs_ideal["P_fastest"],
+
+                                   )],
+
+                                  'layout': go.Layout(
+                                      xaxis=dict(title='Fastest Position'),
+                                      yaxis=dict(title='Ideal Position'),
+                                      height=700)
+                                   }
+                                   )],
+                        width=6),
+
+                dbc.Col([dcc.Graph(id='fastest-vs-ideal-only_you',
+                                   figure={'data': [go.Scatter(
+                                       x=position_fastest_vs_ideal["P_fastest"],
+                                       y=position_fastest_vs_ideal["your_ideal_position"],
+                                       mode="markers",
+                                       text=position_fastest_vs_ideal["DRIVER_NAME"],
+                                       texttemplate="%{text}",
+                                       textfont={"size": 15},
+                                       # colorscale='Aggrnyl',
+                                       # hoverongaps=False
+                                   ), go.Scatter(
+                                       x=position_fastest_vs_ideal["P_fastest"],
+                                       y=position_fastest_vs_ideal["P_fastest"],
+
+                                   )],
+
+                                       'layout': go.Layout(
+                                           xaxis=dict(title='Fastest Position'),
+                                           yaxis=dict(title='ONLY YOUR Ideal Position'),
+                                           height=700)
+                                   }
+                                   )],
+                        width=6)
+
             ])
+        ])
 
     @dashapp.callback(Output('output-sequence-analysis', 'children'),
                       Input('stored-data', 'data'),
