@@ -2,6 +2,9 @@ import io
 import re
 import base64
 import pandas as pd
+from datetime import datetime
+import plotly.graph_objs as go
+
 
 import dash_bootstrap_components as dbc
 from dash import Dash, html, dcc, dash_table
@@ -16,41 +19,48 @@ def create_dash_app(flask_app):
                    )
 
     dashapp.layout = html.Div([
+        html.H4('Data Import'),
         dbc.Row([
             dbc.Col([html.H6("Upload data", style={"textAlign": "center"}),
                      dcc.Upload(id='upload-data',
-                               children=html.Div(['Drag and Drop or ',
+                                children=html.Div(['Drag and Drop or ',
                                                   html.A('Select a File', style={'color': 'blue'})]),
-                               style={'height': '60px',
+                                style={'height': '60px',
                                       'lineHeight': '60px',
                                       'borderWidth': '1px',
                                       'borderStyle': 'dashed',
                                       'borderRadius': '5px',
                                       'textAlign': 'center',
                                       'float': 'center'},
-                               multiple=False  # Disallow multiple files to be uploaded
-                               )],
+                                multiple=False  # Disallow multiple files to be uploaded
+                                )
+                     ],
                     width=4),
 
             dbc.Col([html.H6("Column Separator"),
                      dbc.RadioItems(id='column-separator-id',
                                     options=[
                                         {'label': 'Comma (,)', 'value': ','},
-                                        {'label': 'Semicolon (;)', 'value': ';'},
-                                        {'label': 'Hyphen (-)', 'value': '-'}],
-                                    value=',')],
+                                        {'label': 'Semicolon (;)', 'value': ';'}],
+                                    value=';')],
                     width=1),
 
-            dbc.Col(html.Div(id='output-filename'), style={"height": "60px", "float": "center"})
+            dbc.Col(html.Div(id='output-filename'))
             ], align="center"),
-
         html.Hr(),  # horizontal line
-        html.H5('Data Preview'),
+
+        html.H4('Data Preview'),
         dbc.Col(html.Div(id='output-datatable')),
         html.Hr(),  # horizontal line
 
+        html.H4('Lap Overview'),
+        html.Div(id='best-lap-table'),
+        html.Hr(),  # horizontal line
 
-        html.Div(id='best-lap-table')
+        html.H4('Sequence Analysis'),
+        html.Div(id='lap-slider-output'),
+        dbc.Col(html.Div(id='output-sequence-analysis')),
+        html.Hr(),  # horizontal line
 
         ])
 
@@ -160,16 +170,88 @@ def create_dash_app(flask_app):
 
         return dbc.Row(
             [dbc.Col(
-                [html.H4("Fastest Lap", style={"textAlign": "center"}), dash_table.DataTable(
+                [html.H5("Fastest Lap", style={"textAlign": "center"}), dash_table.DataTable(
                     data=df_fastest_lap_relevant_data.to_dict('records'),
                     columns=[{'name': i, 'id': i} for i in df_fastest_lap_relevant_data.columns],
                     page_size=20)],
                 width=6),
 
                 dbc.Col(
-                    [html.H4("Ideal Lap", style={"textAlign": "center"}), dash_table.DataTable(
+                    [html.H5("Ideal Lap", style={"textAlign": "center"}), dash_table.DataTable(
                         data=df_ideal_lap_per_driver.to_dict('records'),
                         columns=[{'name': i, 'id': i} for i in df_ideal_lap_per_driver.columns],
                         page_size=20)],
                     width=6)
             ])
+
+    @dashapp.callback(Output('output-sequence-analysis', 'children'),
+                      Input('stored-data', 'data'),
+                      Input('my-slider', 'value'),
+                      Input('team-filter', 'value'))
+    def sequence_analysis(raw_data: dict, slider_value: int, relevant_teams: list):
+        df = pd.DataFrame(raw_data)
+        df.sort_values(by=["DRIVER_NAME", "LAP_NUMBER"], inplace=True)
+        print("HEEEELLO")
+        print(slider_value)
+        df = df[(df.LAP_NUMBER >= slider_value[0]) & (df.LAP_NUMBER <= slider_value[1])]
+        df = df[df.TEAM.isin(relevant_teams)]
+
+        drivers = list(df["DRIVER_NAME"].unique())
+        laps = list(df["LAP_NUMBER"].unique())
+        lap_times_per_driver = []
+        text_lap_times_per_driver = []
+
+        for driver in drivers:
+            times_per_driver = []
+            raw_times = []
+            for lap in laps:
+                lap_time = df[(df["DRIVER_NAME"] == driver) & (df["LAP_NUMBER"] == lap)]["LAP_TIME"].values
+                if len(lap_time) == 0:
+                    lap_time = None
+                    raw_time = "-"
+                else:
+                    lap_time = lap_time[0]
+                    raw_time = lap_time
+                    lap_time = datetime.strptime(lap_time, '%M:%S.%f').time().microsecond
+
+                times_per_driver.append(lap_time)
+                raw_times.append(raw_time)
+            lap_times_per_driver.append(times_per_driver)
+            text_lap_times_per_driver.append(raw_times)
+
+        return dcc.Graph( id='heatmap',
+                          figure={'data': [go.Heatmap(z=lap_times_per_driver,
+                                                      x=laps,
+                                                      y=drivers,
+                                                      text=text_lap_times_per_driver,
+                                                      texttemplate="%{text}",
+                                                      textfont={"size": 15},
+                                                      colorscale='Aggrnyl',
+                                                      hoverongaps=False)],
+                                  'layout': go.Layout(
+                                      xaxis=dict(title='LAP NUMBER'),
+                                      yaxis=dict(title='DRIVER'),
+                                      height=700
+                                  )
+                          }
+                  )
+    @dashapp.callback(Output('lap-slider-output', 'children'),
+                      Input('stored-data', 'data'))
+    def lap_slider(raw_data: dict):
+        df = pd.DataFrame(raw_data)
+        teams = list(df.TEAM.unique())
+
+        minimum_slider_value = df.LAP_NUMBER.min()
+        maximum_slider_value = df.LAP_NUMBER.max()
+
+        return dbc.Row([dbc.Col([html.H6("Teams", style={"textAlign": "center"}),
+                                 dcc.Dropdown(teams, teams,
+                                              multi=True,
+                                              id='team-filter')
+                                 ]),
+                        dbc.Col([html.H6("Laps", style={"textAlign": "center"}),
+                                 dcc.RangeSlider(1, maximum_slider_value, 1,
+                                                 value=[minimum_slider_value, maximum_slider_value],
+                                                 id='my-slider')
+                                 ])
+                        ])
