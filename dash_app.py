@@ -19,6 +19,14 @@ def create_dash_app(flask_app):
                    )
 
     dashapp.layout = html.Div([
+        dbc.NavbarSimple(
+            children=[dbc.NavItem(dbc.NavLink("Page 1", href="#"))],
+            brand="Racing x Data",
+            brand_href="#",
+            color="primary",
+            dark=True
+        ),
+        dbc.Container([
         html.H4('Data Import'),
         dbc.Row([
             dbc.Col([html.H6("Upload data", style={"textAlign": "center"}),
@@ -50,10 +58,10 @@ def create_dash_app(flask_app):
         html.Hr(),  # horizontal line
 
         html.H4('Data Preview'),
-        dbc.Col(html.Div(id='output-datatable')),
+        html.Div(id='output-datatable'),
         html.Hr(),  # horizontal line
 
-        html.H4('Lap Overview'),
+        html.H4('Lap Analysis'),
         html.Div(id='best-lap-table'),
         html.Hr(),  # horizontal line
 
@@ -62,7 +70,8 @@ def create_dash_app(flask_app):
         dbc.Col(html.Div(id='output-sequence-analysis')),
         html.Hr(),  # horizontal line
 
-        ])
+        ], fluid=True, style={"height": "100vh"})
+    ])
 
     @dashapp.callback(Output('output-filename', 'children'),
                       Input('upload-data', 'filename'))
@@ -91,7 +100,10 @@ def create_dash_app(flask_app):
             dash_table.DataTable(
                 data=df.to_dict('records'),
                 columns=[{'name': i, 'id': i} for i in df.columns],
-                page_size=5),
+                page_size=5,
+                style_data={'whiteSpace': 'normal',
+                            'height': 'auto'},
+                style_table={'overflowX': 'scroll'}),
             dcc.Store(id='stored-data', data=df.to_dict('records'))
         ])
 
@@ -207,55 +219,113 @@ def create_dash_app(flask_app):
                                         width=6)
                                 ]),
             dbc.Row([
-                dbc.Col([dcc.Graph(id='fastest-vs-ideal-all',
+                dbc.Col([html.Br(),
+                         html.H5("Fastest vs Ideal", style={"textAlign": "center"}),
+                         dcc.Graph(id='fastest-vs-ideal-all',
                                    figure={'data': [go.Scatter(
                                                       x=position_fastest_vs_ideal["P_fastest"],
                                                       y=position_fastest_vs_ideal["P_ideal"],
-                                                      mode="markers",
+                                                      mode="markers+text",
+                                                      marker={'color': 'LightSeaGreen'},
                                                       text=position_fastest_vs_ideal["DRIVER_NAME"],
+                                                      textposition='top center',
                                                       texttemplate="%{text}",
-                                                      textfont={"size": 15},
-                                                      #colorscale='Aggrnyl',
-                                                      #hoverongaps=False
+                                                      textfont={"size": 10},
+                                                      name="drivers",
                                    ), go.Scatter(
                                                       x=position_fastest_vs_ideal["P_fastest"],
                                                       y=position_fastest_vs_ideal["P_fastest"],
-
+                                                      mode="lines",
+                                                      marker={'color': 'Aquamarine'},
+                                                      name="45° line",
                                    )],
 
                                   'layout': go.Layout(
                                       xaxis=dict(title='Fastest Position'),
                                       yaxis=dict(title='Ideal Position'),
+                                      title="Position Comparison",
                                       height=700)
                                    }
                                    )],
                         width=6),
 
-                dbc.Col([dcc.Graph(id='fastest-vs-ideal-only_you',
+                dbc.Col([html.Br(),
+                         html.H5("Fastest vs Potential", style={"textAlign": "center"}),
+                         dcc.Graph(id='fastest-vs-ideal-only_you',
                                    figure={'data': [go.Scatter(
                                        x=position_fastest_vs_ideal["P_fastest"],
                                        y=position_fastest_vs_ideal["your_ideal_position"],
-                                       mode="markers",
+                                       mode="markers+text",
+                                       marker={'color': 'MidnightBlue'},
+                                       name="drivers",
                                        text=position_fastest_vs_ideal["DRIVER_NAME"],
+                                       textposition='top center',
                                        texttemplate="%{text}",
-                                       textfont={"size": 15},
-                                       # colorscale='Aggrnyl',
-                                       # hoverongaps=False
+                                       textfont={"size": 10},
                                    ), go.Scatter(
                                        x=position_fastest_vs_ideal["P_fastest"],
                                        y=position_fastest_vs_ideal["P_fastest"],
+                                       marker={'color': 'LightSkyBlue'},
+                                       name="45° line"
 
                                    )],
 
                                        'layout': go.Layout(
                                            xaxis=dict(title='Fastest Position'),
-                                           yaxis=dict(title='ONLY YOUR Ideal Position'),
+                                           yaxis=dict(title='Potential Position'),
+                                           title="Position Comparison",
                                            height=700)
                                    }
                                    )],
                         width=6)
+            ]),
+        # Difference in Positions
+            dbc.Row([dbc.Col(dcc.Graph(id='difference-fastest-vs-ideal-all',
+                                   figure={'data': [go.Bar(
+                                       x=position_fastest_vs_ideal["DRIVER_NAME"].str[:10],
+                                       y=position_fastest_vs_ideal["P_fastest"] - position_fastest_vs_ideal["P_ideal"],
+                                       text=position_fastest_vs_ideal["P_fastest"] - position_fastest_vs_ideal["P_ideal"],
+                                       textposition='outside',
+                                       texttemplate="%{text}",
+                                       textfont=dict(
+                                           size=12,
+                                           color="LightSeaGreen"),
+                                       marker={'color': 'LightSeaGreen'},
+                                   )],
 
-            ])
+                                       'layout': go.Layout(
+                                           xaxis=dict(tickangle=-45, tickfont={'size': 10}),
+                                           yaxis=dict(title='Difference Ideal to Fastest'),
+                                           title="Position Difference",
+                                       )
+                                   }
+                                   ),
+                        width=6),
+
+                dbc.Col([
+                         dcc.Graph(id='difference-fastest-vs-ideal-only_you',
+                                   figure={'data': [go.Bar(
+                                       x=position_fastest_vs_ideal["DRIVER_NAME"].str[:10],
+                                       y=position_fastest_vs_ideal["P_fastest"] - position_fastest_vs_ideal["your_ideal_position"],
+                                       text=position_fastest_vs_ideal["P_fastest"] - position_fastest_vs_ideal["your_ideal_position"],
+                                       textposition='outside',
+                                       texttemplate="%{text}",
+                                       textfont=dict(
+                                           size=12,
+                                           color="LightSkyBlue"),
+                                       marker={'color': 'LightSkyBlue'}
+                                   )],
+
+                                       'layout': go.Layout(
+                                           xaxis=dict(tickangle=-45, tickfont={'size': 10}),
+                                           yaxis=dict(title='Difference Potential to Fastest'),
+                                           title="Position Difference",
+                                       )
+                                   }
+                                   )],
+                        width=6)
+
+            ], style={"height": "5%"})
         ])
 
     @dashapp.callback(Output('output-sequence-analysis', 'children'),
@@ -271,11 +341,13 @@ def create_dash_app(flask_app):
         df = df[df.TEAM.isin(relevant_teams)]
 
         drivers = list(df["DRIVER_NAME"].unique())
+        drivers_label = []
         laps = list(df["LAP_NUMBER"].unique())
         lap_times_per_driver = []
         text_lap_times_per_driver = []
 
         for driver in drivers:
+            drivers_label.append(driver[:10])
             times_per_driver = []
             raw_times = []
             for lap in laps:
@@ -296,15 +368,15 @@ def create_dash_app(flask_app):
         return dcc.Graph( id='heatmap',
                           figure={'data': [go.Heatmap(z=lap_times_per_driver,
                                                       x=laps,
-                                                      y=drivers,
+                                                      y=drivers_label,
                                                       text=text_lap_times_per_driver,
                                                       texttemplate="%{text}",
                                                       textfont={"size": 15},
                                                       colorscale='Aggrnyl',
+                                                      showscale=False,
                                                       hoverongaps=False)],
                                   'layout': go.Layout(
                                       xaxis=dict(title='LAP NUMBER'),
-                                      yaxis=dict(title='DRIVER'),
                                       height=700
                                   )
                           }
